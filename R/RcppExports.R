@@ -33,10 +33,6 @@ get_assigment_prob <- function(x, z, components, prior, Pi, lambda, alpha) {
     .Call('PDP_get_assigment_prob', PACKAGE = 'PDP', x, z, components, prior, Pi, lambda, alpha)
 }
 
-rcpp_hello_world <- function() {
-    .Call('PDP_rcpp_hello_world', PACKAGE = 'PDP')
-}
-
 update <- function(components, k, x, debug) {
     invisible(.Call('PDP_update', PACKAGE = 'PDP', components, k, x, debug))
 }

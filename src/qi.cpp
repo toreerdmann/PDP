@@ -96,7 +96,7 @@ arma::vec get_assigment_prob(arma::mat x,
                              NumericVector Pi,
                              double lambda, double alpha) {
   int K = components.size();
-  arma::vec q(K);
+  arma::vec q(K+1);
   q[0] = qi0_cpp(x, prior, alpha);
   for (int j=1; j <= K; j++) {
     q[j] = qik_cpp(x, j, z, components[j-1], Pi, lambda);

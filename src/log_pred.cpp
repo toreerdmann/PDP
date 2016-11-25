@@ -24,7 +24,7 @@ arma::vec Mahalanobis(arma::mat x, arma::rowvec center, arma::mat cov) {
 // [[Rcpp::export]]
 arma::vec dmvt_arma(arma::mat x, arma::rowvec mean, arma::mat sigma, double nu) {
   using namespace Rcpp;
-  double n = (double) x.n_rows;
+  // double n = (double) x.n_rows;
   double d = (double) x.n_cols;
   arma::vec distval = Mahalanobis(x, mean, sigma);
   double logdet = sum(arma::log(arma::eig_sym(sigma)));

@@ -15,9 +15,9 @@ inline int randWrapper(const int n) { return floor(unif_rand()*n); }
 // [[Rcpp::export]]
 void one_pass_cpp (NumericVector z, arma::mat y, List components, List prior,
                          NumericMatrix P, double alpha, double lambda,
-                         int debug) {
+		   int debug, Function samplefun, Function samplefun2) {
   int n = y.n_rows;
-  int d = y.n_cols;
+  // int d = y.n_cols;
   int K = components.length();
   // Rcpp::print(wrap(K));
 
@@ -28,7 +28,7 @@ void one_pass_cpp (NumericVector z, arma::mat y, List components, List prior,
   // Rcpp::print(wrap(ind));
   //
 
-  int i = 1;
+  int i=4;
   // for (int i=0; i < n; i++) {
     // i = ind[i];
 
@@ -46,6 +46,9 @@ void one_pass_cpp (NumericVector z, arma::mat y, List components, List prior,
     int old_class = z[i];
     // set current labels to zero
     z[i] = 0;
+
+    // cache the old_component, so it can possibly be restored
+    List old_component = components[old_class-1];
 
     if (debug == 1) {
       Rcpp::print(wrap("z after setting z[i] = 0: "));
@@ -71,8 +74,6 @@ void one_pass_cpp (NumericVector z, arma::mat y, List components, List prior,
           Rcpp::print(wrap(nam[old_class-1]));
         }
 
-        // cache the old_component, so it can possibly be restored
-        List old_component = components[old_class-1];
         // move last component forward to empty spot
         components[old_class - 1] = components[K-1];
         Rcpp::print(wrap(z[z == K]));
@@ -104,7 +105,7 @@ void one_pass_cpp (NumericVector z, arma::mat y, List components, List prior,
         // update with all data except for current
         arma::colvec z2 = as<arma::colvec>(z);
         arma::mat ysub = y.rows(arma::find(z2 == old_class) - 1);
-        List new_comp = new_component(components, old_class-1, ysub, 0);
+        List new_comp = reinit_component(components, old_class-1, ysub, 0);
         components[old_class - 1] = new_comp;
 
         if (debug == 1) {
@@ -123,51 +124,61 @@ void one_pass_cpp (NumericVector z, arma::mat y, List components, List prior,
                                      P(i,_), lambda, alpha);
     // normalize
     q = exp(q - logsumexp(q));
+    print(wrap("q:"));
+    print(wrap(q));
+
+
+    // draw class
+    // double ret = R::runif(0, 1);
+    z[i] = as<int>(samplefun(K, q));
+    z[i] = 0;
 
     if (debug == 1) {
       print(wrap("compute assignment prob using:"));
       print(wrap(ysub));
       print(wrap("q:"));
       print(wrap(q));
+      print(wrap("z[i] drawn:"));
+      print(wrap(z[i]));
     }
 
-    // draw class
-    double ret = R::runif(0, 1);
-    // int ret = sample(seq_len(K), 1, false, q);
-    print(wrap(ret));
-    print(wrap(ret < q));
+    // if equal to 0, create new cluster
+    if (z[i] == 0) {
+      if (sum(z == old_class) == 0) {
+	// just use the old singleton cluster if it had one
 
+	// alternative: (causing segfault?)
+	// components.push_back(components[K-1]);
+	// components[old_class] = old_component;
+	components.push_back(old_component);
+	K++;
+        z[i] = K;
+        // z[i] = old_class;
+      } else {
+	// else, make a new one and update with the
+        // single observation
 
-  // }
-        // ## draw assignment
-        // z[i] = sample(0:K, 1, prob = q)
-        // ## if equal to 0, create new cluster
-        // if (z[i] == 0) {
-        //     if (sum(z == old_class) == 0) {
-        //         ## just use the old singleton cluster if it had one
-        //         components =
-        //             purrr::splice(components,
-        //                           list(old_component))
-        //         ## components = append(components, components[[old_class]])
-        //         ## components[[old_class]] = old_component
-        //         K = K + 1
-        //         z[i] = K
-        //     } else {
-        //         ## else, make a new one and update with the
-        //         ## single observation
-        //
-        //         ## sample new prior values
-        //         S0 = MCMCpack::rwish(prior_nu, prior_precision)
-        //         m0 = mvtnorm::rmvnorm(1, prior_mean, 1 / prior_kappa * S0)
-        //         components =
-        //             purrr::splice(components,
-        //                           list(normal_component(m0, prior_kappa, prior_nu, S0)))
-        //         K = K + 1
-        //         z[i] = K
-        //
-        //
-        //     }
-        // }
+         // sample new prior values
+	// prior_vals = samplefun2(prior)
+
+        arma::colvec z2 = as<arma::colvec>(z);
+        arma::mat ysub = y.rows(arma::find(z2 == old_class) - 1);
+	List new_comp = sample_new_component(prior, ysub, samplefun2, debug);
+	components.push_back(new_component);
+	K++;
+        z[i] = K;
+      }
+	if (debug == 1) {
+	  print(wrap("push_back"));
+	  print(wrap(components));
+	  print(wrap("K:"));
+	  print(wrap(K));
+	  print(wrap("old_class:"));
+	  print(wrap(old_class));
+	  print(wrap("z:"));
+	  print(wrap(z));
+	}
+    }
         // ## update stats of cluster z[i]
         // components[[z[i][1]]]$update(y[i, , drop = FALSE])
     // }
@@ -198,6 +209,16 @@ z[2:4] = 2
 z[5] = 3
 inds = 1:5
 xi = x[inds,,drop=F]
+samplefun = function(K, q){
+  sample.int(K+1, 1, prob = q) - 1
+}
+samplefun2 = function(prior_mean, prior_kappa, prior_nu, prior_sigma) {
+        S0 = MCMCpack::rwish(prior_nu, prior_sigma)
+	m0 = mvtnorm::rmvnorm(1, prior_mean, 1 / prior_kappa * S0)
+        list(m = m0, kappa = prior_kappa, nu = prior_nu, sigma = S0)
+}
+
 one_pass_cpp(z[inds], x[inds,,drop=F], components, prior,
-             as.matrix(P)[inds,inds,drop=F], alpha, lambda, 1)
+             as.matrix(P)[inds,inds,drop=F], alpha, lambda, 1,
+	     samplefun, samplefun2)
 */

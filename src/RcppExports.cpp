@@ -121,16 +121,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// rcpp_hello_world
-List rcpp_hello_world();
-RcppExport SEXP PDP_rcpp_hello_world() {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(rcpp_hello_world());
-    return rcpp_result_gen;
-END_RCPP
-}
 // update
 void update(List components, int k, const arma::mat x, int debug);
 RcppExport SEXP PDP_update(SEXP componentsSEXP, SEXP kSEXP, SEXP xSEXP, SEXP debugSEXP) {
