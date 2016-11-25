@@ -1,0 +1,3 @@
+useDynLib(PDP)
+exportPattern("^[[:alpha:]]+")
+importFrom(Rcpp, evalCpp)
