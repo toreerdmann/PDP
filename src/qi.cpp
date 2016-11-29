@@ -6,16 +6,25 @@ using namespace Rcpp;
 // [[Rcpp::depends("RcppArmadillo")]]
 // [[Rcpp::export]]
 double qik_cpp(arma::mat x, int k,
-                  NumericVector z,
+                  IntegerVector z,
                   List components,
                   NumericVector Pi,
                   double lambda) {
   LogicalVector nk = z == k;
-  NumericVector neighbor_classes = z[Pi == 1];
+  if (sum(nk) == 0)
+    stop("Cannot compute probability for empty component");
+  IntegerVector neighbor_classes = z[Pi == 1];
   double nc_sum = sum(neighbor_classes == k);
 
-  return log_pred(x, components["m"],  components["kappa"],
-                  components["nu"], components["sigma"]) +
+  // extract relevant component
+  List ll = components[k-1];
+  arma::rowvec prior_mean   = as<arma::rowvec>(ll["m"]);
+  double prior_kappa        = ll["kappa"];
+  double prior_nu           = ll["nu"];
+  arma::mat prior_sigma     = as<arma::mat>(ll["sigma"]);
+
+  return log_pred(x, prior_mean, prior_kappa,
+                  prior_nu, prior_sigma) +
                     log(sum(nk)) + nc_sum * lambda;
 }
 
@@ -54,7 +63,7 @@ testthat::test_that("postpred works", {
 // [[Rcpp::depends("RcppArmadillo")]]
 // [[Rcpp::export]]
 double qi0_cpp(arma::mat x, List prior, double alpha) {
-  return log(alpha) +
+  return alpha +
     log_pred(x, prior["m"], prior["kappa"], prior["nu"], prior["sigma"]);
 }
 
@@ -89,17 +98,22 @@ testthat::test_that("prior pred works with multiple obs", {
 
 // [[Rcpp::depends("RcppArmadillo")]]
 //[[Rcpp::export]]
-arma::vec get_assigment_prob(arma::mat x,
-                             NumericVector z,
+arma::vec get_assignment_prob(arma::mat x,
+                             IntegerVector z,
                              List components,
                              List prior,
                              NumericVector Pi,
-                             double lambda, double alpha) {
+                             double lambda, double alpha,
+                             int debug) {
   int K = components.size();
   arma::vec q(K+1);
+  if (debug == 1)
+    print(wrap(0));
   q[0] = qi0_cpp(x, prior, alpha);
   for (int j=1; j <= K; j++) {
-    q[j] = qik_cpp(x, j, z, components[j-1], Pi, lambda);
+    if (debug == 1)
+      print(wrap(j));
+    q[j] = qik_cpp(x, j, z, components, Pi, lambda);
   }
   return q;
 }
