@@ -109,7 +109,10 @@ arma::vec get_assignment_prob(arma::mat x,
   arma::vec q(K+1);
   if (debug == 1)
     print(wrap(0));
-  q[0] = qi0_cpp(x, prior, alpha);
+  if (K > 20) // set a hard threshold here
+    q[0] = 0;
+  else
+    q[0] = qi0_cpp(x, prior, alpha);
   for (int j=1; j <= K; j++) {
     if (debug == 1)
       print(wrap(j));

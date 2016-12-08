@@ -1,9 +1,11 @@
 // [[Rcpp::depends(RcppArmadillo)]]
 #include <RcppArmadillo.h>
 #include <update_chol.cpp>
-#include <projects/Masterthesis/code/PDP/src/log_pred.cpp>
+#include <log_pred.cpp>
+#include <rfuns.cpp>
 
 using namespace Rcpp;
+using namespace arma;
 
 struct nw_component {
   // current values
@@ -44,9 +46,13 @@ struct nw_component {
     prior_nu = ll[3];
     prior_S = as<arma::mat>(ll[4]);
   };
-  void init_sample(List prior, Function samplefun2) {
-    List ll = samplefun2(prior);
-    initialize(ll["m"], ll["kappa"], ll["nu"], ll["sigma"]);
+  void init_sample(List prior) {
+    // List ll = samplefun2(prior);
+    mat inv_S = rwish(prior["nu"], prior["chol_S"], true);
+    mat S_new = inv_S.i();
+    mat S_new_mu = S_new / as<double>(prior["kappa"]);
+    rowvec mu_new = rmvnorm(1, prior["m"], chol(S_new_mu), true);
+    initialize(mu_new, prior["kappa"], prior["nu"], S_new);
   };
   void update(const arma::mat& x, bool downdate, int debug) {
     // data stats
@@ -80,19 +86,23 @@ struct nw_component {
       m =  
         (kappa + n) / kappa * m - 
         (n * x_mean / kappa);
-      double fac1 = kappa / (kappa + n);
-      arma::rowvec xi_m = sqrt(fac1) * x_mean - m;
+      arma::rowvec xi_m = sqrt((kappa * n)/ (kappa + n)) * x_mean - m;
       S = S - xc - xi_m.t() * xi_m;
       // update chol
+      update_chol(chol_S, x - x_mean, downdate);
       update_chol(chol_S, xi_m, downdate);
     } else {
-      double fac1 = kappa / (kappa + n);
-      arma::rowvec xi_m = sqrt(fac1) * x_mean - m;
+      arma::rowvec xi_m = sqrt((kappa * n) / (kappa + n)) * x_mean - m;
       S = S + xc + xi_m.t() * xi_m;
       m = (kappa * m + n * x_mean) / (kappa + n);
+      // S =  S + x.t() * x + 
+      //   kappa * m0.t() * m0 - 
+      //   (kappa+n) * m.t() * m
+        
       kappa = kappa + n;
       nu    = nu    + n;
       // update chol
+      update_chol(chol_S, x - x_mean, downdate);
       update_chol(chol_S, xi_m, downdate);
     }
   };
@@ -133,13 +143,14 @@ struct nw_component {
     rval["kappa"] = kappa;
     rval["nu"] = nu;
     rval["S"] = S;
+    rval["chol_S"] = chol_S;
     return rval;
   };
   
 };
 
 // [[Rcpp::export]]
-void test(List& ll, const arma::mat& x, Function samplefun2) {
+void test(List& ll, const arma::mat& x) {
   
   std::vector<nw_component> mixture(1);
   nw_component c1;
@@ -147,7 +158,7 @@ void test(List& ll, const arma::mat& x, Function samplefun2) {
   mixture[0] = c1;
   
   nw_component c2;
-  c2.init_sample(ll, samplefun2);
+  c2.init_sample(ll);
   mixture.push_back(c2);
   
   int K = mixture.size();
@@ -155,7 +166,7 @@ void test(List& ll, const arma::mat& x, Function samplefun2) {
     mixture[j].print_mean();
   
   // replace first element with last and pop
-  mixture[0] = mixture[K - 1];
+  std::swap(mixture[0], mixture[K - 1]);
   mixture.pop_back();
   K--;
   
@@ -164,7 +175,7 @@ void test(List& ll, const arma::mat& x, Function samplefun2) {
   
   for (int j = 0; j < 4; j++) {
     nw_component nw_new;
-    nw_new.init_sample(ll, samplefun2);
+    nw_new.init_sample(ll);
     mixture.push_back(nw_new);
     K += 1;
   }
@@ -206,9 +217,10 @@ NumericVector test_logpred2(List& ll, arma::mat& x) {
 /*** R
 source("~/projects/Masterthesis/code/PDP/R/samplefuns.R")
 x = mvtnorm::rmvnorm(100, mean = c(2, 2), sigma = matrix(c(1, .3, .3, 1), 2, 2))
-prior = list(m = c(0,0), kappa = 2, nu = 4, S = matrix(c(1, 0, 0, 1), 2, 2))
+prior = list(m = c(0,0), kappa = 2, nu = 4, S = matrix(c(1, 0, 0, 1), 2, 2),
+             chol_S = matrix(c(1, 0, 0, 1), 2, 2))
 xi = x[1, , drop=FALSE]
-test(prior, xi, samplefun2)
+test(prior, xi)
 
 sapply(1:10, function(i)
   log_pred(x[i,,drop=F], prior$m, prior$kappa, prior$nu, prior$S) )
@@ -218,6 +230,7 @@ dmvt_chol(x[1,,drop=F], prior$m, prior$S, prior$nu)
 test_logpred(prior, x[1:10, ,drop=F])
 # xi = x[1:10, , drop=FALSE]
 # test(prior, xi)
+
 
 */
 
@@ -246,8 +259,8 @@ List test_up_down_date(List& ll, arma::mat& x) {
 }
 
 /*** R
-testthat::test_that("updating works", {
-  x = mvtnorm::rmvnorm(100, mean = c(2, 2), 
+testthat::test_that("updating single obs works", {
+  x = mvtnorm::rmvnorm(100, mean = matrix(c(2, 2), 1), 
                        sigma = matrix(c(1, .3, .3, 1), 2, 2))
   prior = list(mean = matrix(c(0,0), 1), kappa = 2, nu = 4, S = matrix(c(1, 0, 0, 1), 2, 2))
   xi = x[1, , drop = F]; n = nrow(xi) 
@@ -257,18 +270,76 @@ testthat::test_that("updating works", {
   S2 = prior$S + crossprod(xi_m, xi_m)
   testthat::expect_equal(res$m, m2)
   testthat::expect_equal(res$S, S2)
+})
   
+testthat::test_that("updating multiple obs works", {
+  prior = list(mean = matrix(c(0,0), 1), kappa = 2, nu = 4, S = matrix(c(1, 0, 0, 1), 2, 2))
   ## multiple obs
   xi = x[1:10, , drop = F]; n = nrow(xi) 
-  res = test_update(prior, xi)
-  m2 = (prior$kappa*prior$m + n * colMeans(xi)) / (prior$kappa + n)
-  xi_m = sqrt(prior$kappa / (prior$kappa + n)) * colMeans(xi) - prior$m
-  S2 = prior$S + crossprod(xi_m, xi_m)
-  testthat::expect_equal(res$m, m2)
-  testthat::expect_equal(res$S, S2)
+  # res = test_update(prior, xi)
+  m2 = 
+    matrix((prior$kappa*prior$m + n * colMeans(xi)) / (prior$kappa + n), 1)
+  # m2 = 
+  #   prior$kappa / (prior$kappa + n) * prior$m + n / (prior$kappa + n) * colMeans(xi)
+  xi_m = sqrt((prior$kappa * n) / (prior$kappa + n)) * colMeans(xi) - prior$m
+  S2 = 
+    prior$S + crossprod(xi_m, xi_m) +  
+    crossprod(xi - colMeans(xi), xi - colMeans(xi))
+  S3 = 
+    prior$S + crossprod(xi - colMeans(xi), xi - colMeans(xi)) +
+    (prior$kappa * n)/(prior$kappa + n) * crossprod(colMeans(xi) - prior$m, colMeans(xi) - prior$m)
+  S4 = 
+    prior$S +  crossprod(xi, xi) +
+    prior$kappa * crossprod(prior$m, prior$m) -
+    (kappa + n) * crossprod(m2, m2)
   
-  res = test_up_down_date(prior, x[1:10, , drop = FALSE])
+  chol_S = chol(prior$S)
+  for (i in 1:10)
+    update_chol(chol_S, xi[i,,drop=F] - colMeans(xi), FALSE)
+  update_chol(chol_S, sqrt(prior$kappa * n / (kappa+n)) * colMeans(xi) - prior$m, TRUE)
+  t(chol_S) %*% chol_S
+  
+  ## version2
+  chol_S = chol(prior$S)
+  for (i in 1:10)
+    update_chol(chol_S, xi[i,,drop=F], FALSE)
+  update_chol(chol_S, sqrt(kappa+n) * m2, TRUE)
+  t(chol_S) %*% chol_S
+  
+  res2 = test_update(prior, xi)
+  testthat::expect_equal(res2$m, m2)
+  testthat::expect_equal(res2$S, S2)
+  
+  res = test_update(prior, xi[1,,drop=F])
+  for (i in 2:10)
+    res = test_update(res, xi[i,,drop=F]) ## this is correct
+  testthat::expect_equal(res$S, t(res$chol_S) %*% res$chol_S)
+  testthat::expect_equal(m2, res$m)
+  testthat::expect_equal(S2, res$S)
+  testthat::expect_equal(res2$m, res$m)
+  testthat::expect_equal(res$S, res2$S)
+  testthat::expect_equal(res2$S, t(res2$chol_S) %*% res2$chol_S)
+})
+  
+  
+  
+  # source("projects/Masterthesis/code/PDP/R/nw_component.R")
+  # nw1 = normal_component(prior$m, prior$kappa, prior$nu, prior$S)
+  # nw1$update(xi)
+  # nw1$params()
+  # t(res$chol_S) %*% res$chol_S
+  
+  
+testthat::test_that("updating and downdating gives back prior", {
+  prior = list(mean = matrix(c(0,0), 1), kappa = 2, nu = 4, S = matrix(c(1, 0, 0, 1), 2, 2))
+  xi = x[1:10, , drop = F]; n = nrow(xi) 
+  
+  res = test_up_down_date(prior, x[1, , drop = FALSE])
   testthat::expect_equal(res$m, prior$m)
   testthat::expect_equal(res$S, prior$S)
+  
+  # res = test_up_down_date(prior, x[1:10, , drop = FALSE])
+  # testthat::expect_equal(res$m, prior$m)
+  # testthat::expect_equal(res$S, prior$S)
 })
 */
