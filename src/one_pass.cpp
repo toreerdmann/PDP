@@ -34,7 +34,7 @@ List one_pass_cpp (IntegerVector ind, IntegerVector z,
 
     i = ind[i1] - 1;
 
-    if (debug == 1) {
+    if (debug > 0) {
       Rcpp::print(wrap("================================="));
       Rcpp::print(wrap("=========== new iter ============"));
       Rcpp::print(wrap("================================="));
@@ -145,7 +145,7 @@ List one_pass_cpp (IntegerVector ind, IntegerVector z,
       }
     }
 
-    if (debug == 1)
+    if (debug > 0)
       Rcpp::print(wrap("compute q"));
     // compute assignment probabilities
     // arma::colvec z2 = as<arma::colvec>(z);
@@ -220,6 +220,8 @@ List one_pass_cpp (IntegerVector ind, IntegerVector z,
       print(wrap("update component[z[i]]:"));
       print(wrap(components));
     }
+    if (debug == 2)
+      print(wrap("update component[z[i]]"));
     update(components, z[i], ysub, 0);
   }
   // list(z = z, components = components)
@@ -276,9 +278,9 @@ samplefun2 = function(prior) {
   m0 = mvtnorm::rmvnorm(1, prior_mean, 1 / prior_kappa * S0)
   list(m = m0, kappa = prior_kappa, nu = prior_nu, sigma = S0)
 }
-
+# 
 # inds = 1:10
-# one_pass_cpp(z[inds], x[inds,,drop=F], components, prior,
+# one_pass_cpp(inds, z[inds], x[inds,,drop=F], components, prior,
 #              as.matrix(P)[inds,inds,drop=F], alpha, lambda, 1,
 # 	     samplefun, samplefun2)
 # z

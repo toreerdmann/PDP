@@ -18,10 +18,10 @@ double qik_cpp(arma::mat x, int k,
 
   // extract relevant component
   List ll = components[k-1];
-  arma::rowvec prior_mean   = as<arma::rowvec>(ll["m"]);
-  double prior_kappa        = ll["kappa"];
-  double prior_nu           = ll["nu"];
-  arma::mat prior_sigma     = as<arma::mat>(ll["sigma"]);
+  arma::rowvec prior_mean   = as<arma::rowvec>(ll[1]);
+  double prior_kappa        = ll[2];
+  double prior_nu           = ll[3];
+  arma::mat prior_sigma     = as<arma::mat>(ll[4]);
 
   return log_pred(x, prior_mean, prior_kappa,
                   prior_nu, prior_sigma) +
@@ -40,7 +40,7 @@ k = 1
 
 
 testthat::test_that("postpred works", {
-  source("nw_component.R")
+  source("~/projects/Masterthesis/code/PDP/R/nw_component.R")
   xi = matrix(x[1,1,drop=F])
   n <- nrow(x); d = ncol(x)
   prior = components[[1]]
@@ -110,7 +110,7 @@ arma::vec get_assignment_prob(arma::mat x,
   if (debug == 1)
     print(wrap(0));
   if (K > 20) // set a hard threshold here
-    q[0] = 0;
+    q[0] = -1 * arma::datum::inf;
   else
     q[0] = qi0_cpp(x, prior, alpha);
   for (int j=1; j <= K; j++) {
@@ -133,7 +133,7 @@ components = list(
   comp2 = list(m = c(2, 2), kappa = 2, nu = 4, sigma = sigma,
                prior = list(m = c(0, 0), kappa = 2, nu = 4, sigma = sigma)))
 
-prior = components[[1]][[5]]
+prior = components[[1]][[5]]  
 get_assigment_prob(xi, z, components, prior, P[i,], lambda, alpha)
  # # get_assigment_prob(x[4,,drop=F], z, components, P[i,], lambda, alpha)
  #

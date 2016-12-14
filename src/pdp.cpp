@@ -80,7 +80,7 @@ testthat::test_that("pdp call gives no error", {
   source("~/projects/Masterthesis/code/PDP/R/samplefuns.R")
   nrep = 200
   ret = pdp(nrep, z, x, components, prior,
-            P, alpha, lambda, 0, samplefun, samplefun2)
+            P, alpha, lambda, 2, samplefun, samplefun2)
   plot(x, col = ret$z[nrep,])
 })
 */

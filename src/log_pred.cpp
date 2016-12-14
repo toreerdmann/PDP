@@ -6,7 +6,7 @@
 // [[Rcpp::depends("RcppArmadillo")]]
 #include <RcppArmadillo.h>
 
-const double logpi = std::log(M_PI);
+const double logpi = std::log(M_PI); 
 const double log2pi = std::log(2.0 * M_PI);
 
 using namespace Rcpp;
@@ -57,11 +57,11 @@ arma::vec Mahalanobis_chol(const arma::mat& x,
                            const arma::mat& chol_S) {
     int n = x.n_rows;
     int d = x.n_cols;
-    arma::mat x_cen;
-    x_cen.copy_size(x);
-    for (int i=0; i < n; i++) {
-        x_cen.row(i) = x.row(i) - center;
-    }
+    // arma::mat x_cen;
+    // x_cen.copy_size(x);
+    // for (int i=0; i < n; i++) {
+    //     x_cen.row(i) = x.row(i) - center;
+    // }
     arma::mat cholDec = arma::trimatl(chol_S.t());
     arma::vec D = cholDec.diag();
     
@@ -97,9 +97,10 @@ arma::vec dmvt_chol(const arma::mat& x, const arma::rowvec& mean,
 }
 /*** R
 
+## 4 ways to compute the logdet
 # S = MCMCpack::rwish(3, diag(3))
 # chol_S = chol(S)
-# determinant(S)
+# determinant(S)$modulus[1]
 # sum(log((diag(chol_S)^2)))
 # sum(2 * log((diag(chol_S))))
 # sum(log(eigen(S)$values))
@@ -110,25 +111,47 @@ arma::vec dmvt_chol(const arma::mat& x, const arma::rowvec& mean,
 # m = c(2,2,2); S = MCMCpack::rwish(3, diag(3))
 # chol_S = chol(S)
 # inv_chol_S = solve(chol_S)
-# rowSums(((x-m) %*% solve(S)) *  (x-m))
+# inv_S = solve(S)
+# rowSums(((x-m) %*% inv_S) *  (x-m))
 # mahalanobis(x, m, S)
-# rowSums((x-m) %*%  backsolve(chol_S, forwardsolve(t(chol_S), t(x-m))))
+# colSums(t(x-m) * backsolve(chol_S, forwardsolve(t(chol_S), t(x-m))))
+#   
+# microbenchmark(
+#   rowSums(((x-m) %*% inv_S) *  (x-m)),
+#   rowSums(((x-m) %*% t(chol_S) %*% chol_S) *  (x-m)),
+#   mahalanobis(x, m, S),
+#   colSums(forwardsolve(t(chol_S), t(v))^2),
+#   colSums(t(x-m) * backsolve(chol_S, forwardsolve(t(chol_S), t(x-m))))
+# )
 
 ## for a matrix
 # v = x-m
-# rowSums(((v) %*% solve(S)) * v)
+# # rowSums(((v) %*% solve(S)) * v)
 # mahalanobis(x, m, S)
-# y = forwardsolve(t(chol_S), t(v)) # Ly = b
-# b = backsolve(chol_S, y)
+# y = forwardsolve(t(chol_S), t(v)) # solution to Ly = v
+# b = backsolve(chol_S, y)          # solution to Ub = y
 # d = t(v) * b
 # colSums(d)
+
+## alternative (for vector)
+# v = x-m
+# y = forwardsolve(t(chol_S), v[1,]) # solution to Ly = v
+# t(y) %*% y                         # equal to first result from mahalanobis
+
+## alternative (for a matrix)
+# v = x-m
+# y = forwardsolve(t(chol_S), t(v)) # solution to Ly = v
+# colSums(y^2) 
+# colSums(forwardsolve(t(chol_S), t(v))^2)
+# colSums(backsolve((chol_S), t(v))^2)
+  
 
 # library(microbenchmark)
 # x = mvtnorm::rmvnorm(9999, m, sigma)
 # res = microbenchmark(times = 1000,
-#   mahalanobis(x, m, S),
-#   Mahalanobis(x, m, S),
-#   Mahalanobis2(x, m, S),
+#   mahalanobis(x, m, sigma),
+#   Mahalanobis(x, m, sigma),
+#   Mahalanobis2(x, m, sigma),
 #   Mahalanobis_chol(x, m, chol_S)
 # )
 # res
@@ -160,6 +183,7 @@ testthat::test_that("mahalanobis and dmvt_arma work in 1D", {
 
 testthat::test_that("mahalanobis and dmvt_arma work in 3D", {
   ## 3D example
+  logpi = log(pi)
   d = 3; nu = 4
   m = c(2,2,2); sigma = matrix(c(1,0,0,0,1,0,0,0,1), 3, 3)
   x = matrix(rnorm(30), 10, 3)
@@ -189,29 +213,30 @@ double log_pred(arma::mat x,
 }
 
 /*** R
-set.seed(1)
-x = matrix(rnorm(30), 10, 3)
-n <- nrow(x); d = ncol(x)
-m = c(2,2,2); sigma = matrix(c(1,0,0,0,1,0,0,0,1), 3, 3)
-kappa = 2; nu = 2
-
-## transformed sigma
-sigi = ((kappa + n) / (kappa * (nu - d + n)) * sigma)
-
-## some tests
-testthat::expect_equal(dmvt_arma(x, m, sigma, 2),
-                       matrix(mvtnorm::dmvt(x, m, sigma, 2)))
-testthat::expect_equal(dmvt_arma(x, m, sigi, 2),
-                       matrix(mvtnorm::dmvt(x, m, sigi, 2)))
-testthat::expect_equal(sum(mvtnorm::dmvt(x, m, (kappa + n) / (kappa * (nu - d + n)) * sigma, nu - d + n, log = TRUE)),
-                       log_pred(x, m, kappa, nu, sigma))
-
+testthat::test_that("log pred works", {
+  set.seed(1)
+  x = matrix(rnorm(30), 10, 3)
+  n <- nrow(x); d = ncol(x)
+  m = c(2,2,2); sigma = matrix(c(1,0,0,0,1,0,0,0,1), 3, 3)
+  kappa = 2; nu = 2
+  ## transformed sigma
+  sigi = ((kappa + n) / (kappa * (nu - d + n)) * sigma)
+  testthat::expect_equal(dmvt_arma(x, m, sigma, 2),
+                         matrix(mvtnorm::dmvt(x, m, sigma, 2)))
+  testthat::expect_equal(dmvt_arma(x, m, sigi, 2),
+                         matrix(mvtnorm::dmvt(x, m, sigi, 2)))
+  testthat::expect_equal(sum(mvtnorm::dmvt(x, m, (kappa + n) / (kappa * (nu - d + n)) * sigma, nu - d + n, log = TRUE)),
+                         log_pred(x, m, kappa, nu, sigma))
+})
 ## and some benchmarking
-# library(microbenchmark)
-# x = mvtnorm::rmvnorm(99999, m, sigma)
-# res = microbenchmark(mvtnorm::dmvt(x, m, sigma, nu),
-#                      mvnfast::dmvt(x, m, sigma, nu),
-#                dmvt_arma(x, m, sigma, nu))
-# res
+library(microbenchmark)
+m = c(2,2,2); sigma = MCMCpack::rwish(3, matrix(c(1,0,0,0,1,0,0,0,1), 3, 3))
+kappa = 2; nu = 2; chol_S = chol(sigma)
+x = mvtnorm::rmvnorm(99999, m, sigma)
+res = microbenchmark(mvtnorm::dmvt(x, m, sigma, nu),
+                     mvnfast::dmvt(x, m, sigma, nu),
+                     dmvt_arma(x, m, sigma, nu),
+                     dmvt_chol(x, m, chol_S, nu))
+res
 */
 

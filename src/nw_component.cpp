@@ -2,7 +2,7 @@
 #include <RcppArmadillo.h>
 #include <update_chol.cpp>
 #include <log_pred.cpp>
-#include <rfuns.cpp>
+#include <rfuns.cpp> 
 
 using namespace Rcpp;
 using namespace arma;
@@ -48,7 +48,7 @@ struct nw_component {
   };
   void init_sample(List prior) {
     // List ll = samplefun2(prior);
-    mat inv_S = rwish(prior["nu"], prior["chol_S"], true);
+    mat inv_S = rwish(prior["nu"], prior["chol_S"], true); // this should be inverse-wishart
     mat S_new = inv_S.i();
     mat S_new_mu = S_new / as<double>(prior["kappa"]);
     rowvec mu_new = rmvnorm(1, prior["m"], chol(S_new_mu), true);
@@ -89,21 +89,30 @@ struct nw_component {
       arma::rowvec xi_m = sqrt((kappa * n)/ (kappa + n)) * x_mean - m;
       S = S - xc - xi_m.t() * xi_m;
       // update chol
-      update_chol(chol_S, x - x_mean, downdate);
-      update_chol(chol_S, xi_m, downdate);
+      update_chol(chol_S, x - x_mean, true);
+      update_chol(chol_S, xi_m, true);
     } else {
       arma::rowvec xi_m = sqrt((kappa * n) / (kappa + n)) * x_mean - m;
       S = S + xc + xi_m.t() * xi_m;
+      
       m = (kappa * m + n * x_mean) / (kappa + n);
-      // S =  S + x.t() * x + 
-      //   kappa * m0.t() * m0 - 
+      // S =  S + x.t() * x +
+      //   kappa * m0.t() * m0 -
       //   (kappa+n) * m.t() * m
         
       kappa = kappa + n;
       nu    = nu    + n;
       // update chol
-      update_chol(chol_S, x - x_mean, downdate);
-      update_chol(chol_S, xi_m, downdate);
+      
+      // before
+      update_chol(chol_S, x - x_mean, false);
+      update_chol(chol_S, xi_m, false);
+      
+      // for (int i; i<n; i++) {
+      //   update_chol(chol_S, x.row(i), FALSE);
+      // }
+      // update_chol(chol_S, sqrt(kappa+n) * m, TRUE);
+      // S = chol_S.t() * chol_S;
     }
   };
   double log_pred(const arma::mat& x) const {
@@ -146,7 +155,6 @@ struct nw_component {
     rval["chol_S"] = chol_S;
     return rval;
   };
-  
 };
 
 // [[Rcpp::export]]
@@ -232,7 +240,11 @@ test_logpred(prior, x[1:10, ,drop=F])
 # test(prior, xi)
 
 
+plot(x)
+plot(density(x))
+
 */
+
 
 /*
  * Testing 
@@ -268,11 +280,15 @@ testthat::test_that("updating single obs works", {
   m2 = (prior$kappa*prior$m + n * colMeans(xi)) / (prior$kappa + n)
   xi_m = sqrt(prior$kappa / (prior$kappa + n)) * colMeans(xi) - prior$m
   S2 = prior$S + crossprod(xi_m, xi_m)
+  S2 = prior$S + crossprod(xi, xi) + kappa * crossprod(prior$m, prior$m) - 
+    sqrt(kappa+n) * crossprod(m2, m2)
   testthat::expect_equal(res$m, m2)
   testthat::expect_equal(res$S, S2)
 })
   
 testthat::test_that("updating multiple obs works", {
+  x = mvtnorm::rmvnorm(100, mean = matrix(c(2, 2), 1), 
+                       sigma = matrix(c(1, .3, .3, 1), 2, 2))
   prior = list(mean = matrix(c(0,0), 1), kappa = 2, nu = 4, S = matrix(c(1, 0, 0, 1), 2, 2))
   ## multiple obs
   xi = x[1:10, , drop = F]; n = nrow(xi) 
