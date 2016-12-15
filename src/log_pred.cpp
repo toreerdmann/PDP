@@ -45,9 +45,6 @@ arma::vec Mahalanobis2(const arma::mat& x, const arma::rowvec& center,
     for (int i=0; i < n; i++) {
         x_cen.row(i) = x.row(i) - center;
     }
-    // arma::mat cov = chol_S.t() * chol_S;
-    // return sum((x_cen * cov.i()) % x_cen, 1);
-    
     return sum((x_cen * (chol_S.t() * chol_S).i()) % x_cen, 1);
 }
 
@@ -57,11 +54,6 @@ arma::vec Mahalanobis_chol(const arma::mat& x,
                            const arma::mat& chol_S) {
     int n = x.n_rows;
     int d = x.n_cols;
-    // arma::mat x_cen;
-    // x_cen.copy_size(x);
-    // for (int i=0; i < n; i++) {
-    //     x_cen.row(i) = x.row(i) - center;
-    // }
     arma::mat cholDec = arma::trimatl(chol_S.t());
     arma::vec D = cholDec.diag();
     
@@ -96,71 +88,6 @@ arma::vec dmvt_chol(const arma::mat& x, const arma::rowvec& mean,
     ((nu + d) / 2) * log(1 + (1/nu) * distval);
 }
 /*** R
-
-## 4 ways to compute the logdet
-# S = MCMCpack::rwish(3, diag(3))
-# chol_S = chol(S)
-# determinant(S)$modulus[1]
-# sum(log((diag(chol_S)^2)))
-# sum(2 * log((diag(chol_S))))
-# sum(log(eigen(S)$values))
-
-
-## different ways of computing the mahalanobis distance
-# x = matrix(rnorm(30), 10, 3)
-# m = c(2,2,2); S = MCMCpack::rwish(3, diag(3))
-# chol_S = chol(S)
-# inv_chol_S = solve(chol_S)
-# inv_S = solve(S)
-# rowSums(((x-m) %*% inv_S) *  (x-m))
-# mahalanobis(x, m, S)
-# colSums(t(x-m) * backsolve(chol_S, forwardsolve(t(chol_S), t(x-m))))
-#   
-# microbenchmark(
-#   rowSums(((x-m) %*% inv_S) *  (x-m)),
-#   rowSums(((x-m) %*% t(chol_S) %*% chol_S) *  (x-m)),
-#   mahalanobis(x, m, S),
-#   colSums(forwardsolve(t(chol_S), t(v))^2),
-#   colSums(t(x-m) * backsolve(chol_S, forwardsolve(t(chol_S), t(x-m))))
-# )
-
-## for a matrix
-# v = x-m
-# # rowSums(((v) %*% solve(S)) * v)
-# mahalanobis(x, m, S)
-# y = forwardsolve(t(chol_S), t(v)) # solution to Ly = v
-# b = backsolve(chol_S, y)          # solution to Ub = y
-# d = t(v) * b
-# colSums(d)
-
-## alternative (for vector)
-# v = x-m
-# y = forwardsolve(t(chol_S), v[1,]) # solution to Ly = v
-# t(y) %*% y                         # equal to first result from mahalanobis
-
-## alternative (for a matrix)
-# v = x-m
-# y = forwardsolve(t(chol_S), t(v)) # solution to Ly = v
-# colSums(y^2) 
-# colSums(forwardsolve(t(chol_S), t(v))^2)
-# colSums(backsolve((chol_S), t(v))^2)
-  
-
-# library(microbenchmark)
-# x = mvtnorm::rmvnorm(9999, m, sigma)
-# res = microbenchmark(times = 1000,
-#   mahalanobis(x, m, sigma),
-#   Mahalanobis(x, m, sigma),
-#   Mahalanobis2(x, m, sigma),
-#   Mahalanobis_chol(x, m, chol_S)
-# )
-# res
-# res = microbenchmark(times = 1000,
-#                      mvnfast::dmvt(x, m, S, 4),
-#                      dmvt_arma(x, m, S, 4),
-#                      dmvt_chol(x, m, chol_S, 4))
-# res
-
 
 testthat::test_that("mahalanobis and dmvt_arma work in 1D", {
   ## 1D example
@@ -198,7 +125,6 @@ testthat::test_that("mahalanobis and dmvt_arma work in 3D", {
 */
 
 
-// [[Rcpp::depends("RcppArmadillo")]]
 // [[Rcpp::export]]
 double log_pred(arma::mat x,
                         arma::rowvec mean,
@@ -230,13 +156,21 @@ testthat::test_that("log pred works", {
 })
 ## and some benchmarking
 library(microbenchmark)
-m = c(2,2,2); sigma = MCMCpack::rwish(3, matrix(c(1,0,0,0,1,0,0,0,1), 3, 3))
-kappa = 2; nu = 2; chol_S = chol(sigma)
-x = mvtnorm::rmvnorm(99999, m, sigma)
-res = microbenchmark(mvtnorm::dmvt(x, m, sigma, nu),
-                     mvnfast::dmvt(x, m, sigma, nu),
-                     dmvt_arma(x, m, sigma, nu),
-                     dmvt_chol(x, m, chol_S, nu))
+x = mvtnorm::rmvnorm(9999, m, sigma)
+res = microbenchmark(times = 1000,
+  mahalanobis(x, m, sigma),
+  Mahalanobis(x, m, sigma),
+  Mahalanobis2(x, m, sigma),
+  Mahalanobis_chol(x, m, chol_S)
+)
 res
+# m = c(2,2,2); sigma = MCMCpack::rwish(3, matrix(c(1,0,0,0,1,0,0,0,1), 3, 3))
+# kappa = 2; nu = 2; chol_S = chol(sigma)
+# x = mvtnorm::rmvnorm(99999, m, sigma)
+# res = microbenchmark(mvtnorm::dmvt(x, m, sigma, nu),
+#                      mvnfast::dmvt(x, m, sigma, nu),
+#                      dmvt_arma(x, m, sigma, nu),
+#                      dmvt_chol(x, m, chol_S, nu))
+# res
 */
 
